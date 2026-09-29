@@ -1,0 +1,76 @@
+﻿<dashboard version="1.1" theme="dark">
+  <label>Incident Investigation Dashboard</label>
+  <description>Comprehensive 4-Panel Security Incident Analysis: Failed Logins, Geo-Location Tracking, Activity Timeline, and Error Diagnostics</description>
+  
+  <row>
+    <!-- Panel 1: Top Failed Logins by User -->
+    <panel>
+      <title>Top Failed Logins by Target User</title>
+      <chart>
+        <search>
+          <query>sourcetype=incident:auth action="failure" | top limit=10 user</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">Failed Attempts Count</option>
+        <option name="charting.axisTitleY.text">Target User</option>
+        <option name="charting.seriesColors">[0xd93f3c]</option>
+      </chart>
+    </panel>
+
+    <!-- Panel 2: Geolocations of Remote Connections -->
+    <panel>
+      <title>Geolocations of Remote Connections (iplocation)</title>
+      <map>
+        <search>
+          <query>sourcetype=incident:auth | iplocation src_ip | where isnotnull(lat) AND isnotnull(lon) | geostats count by action</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="mapping.type">marker</option>
+        <option name="mapping.map.center">(20,0)</option>
+        <option name="mapping.map.zoom">2</option>
+        <option name="mapping.markerLayer.markerMinPercent">5</option>
+        <option name="mapping.markerLayer.markerMaxPercent">25</option>
+      </map>
+    </panel>
+  </row>
+
+  <row>
+    <!-- Panel 3: Timeline of Events -->
+    <panel>
+      <title>Timeline of Authentication Events (Success vs Failure)</title>
+      <chart>
+        <search>
+          <query>sourcetype=incident:auth | timechart span=1h count by action</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisTitleX.text">Time</option>
+        <option name="charting.axisTitleY.text">Event Count</option>
+        <option name="charting.seriesColors">[0xd93f3c, 0x65a637]</option>
+      </chart>
+    </panel>
+
+    <!-- Panel 4: Raw Error Codes Breakdown -->
+    <panel>
+      <title>Raw Error Codes Breakdown</title>
+      <table>
+        <search>
+          <query>sourcetype=incident:auth action="failure" | stats count by error_code, error_description | sort - count | rename error_code as "Error Code", error_description as "Error Description", count as "Failure Count"</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="dataOverlayMode">heatmap</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>
