@@ -2,15 +2,25 @@
   <label>Incident Investigation Dashboard</label>
   <description>Comprehensive 4-Panel Security Incident Analysis: Failed Logins, Geo-Location Tracking, Activity Timeline, and Error Diagnostics</description>
   
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="time_range" searchWhenChanged="true">
+      <label>Time Range</label>
+      <default>
+        <earliest>0</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
   <row>
     <!-- Panel 1: Top Failed Logins by User -->
     <panel>
       <title>Top Failed Logins by Target User</title>
       <chart>
         <search>
-          <query>sourcetype=incident:auth action="failure" | top limit=10 user</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth action="failure" | top limit=10 user</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="charting.chart">bar</option>
         <option name="charting.chart.showDataLabels">all</option>
@@ -26,9 +36,9 @@
       <title>Geolocations of Remote Connections (iplocation)</title>
       <map>
         <search>
-          <query>sourcetype=incident:auth | iplocation src_ip | where isnotnull(lat) AND isnotnull(lon) | geostats count by action</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth | iplocation src_ip | where isnotnull(lat) AND isnotnull(lon) | geostats count by action</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="mapping.type">marker</option>
         <option name="mapping.map.center">(20,0)</option>
@@ -45,9 +55,9 @@
       <title>Timeline of Authentication Events (Success vs Failure)</title>
       <chart>
         <search>
-          <query>sourcetype=incident:auth | timechart span=1h count by action</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth | timechart span=1h count by action</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="charting.chart">area</option>
         <option name="charting.chart.stackMode">stacked</option>
@@ -63,9 +73,9 @@
       <title>Raw Error Codes Breakdown</title>
       <table>
         <search>
-          <query>sourcetype=incident:auth action="failure" | stats count by error_code, error_description | sort - count | rename error_code as "Error Code", error_description as "Error Description", count as "Failure Count"</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth action="failure" | stats count by error_code, error_description | sort - count | rename error_code as "Error Code", error_description as "Error Description", count as "Failure Count"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="drilldown">none</option>
         <option name="dataOverlayMode">heatmap</option>

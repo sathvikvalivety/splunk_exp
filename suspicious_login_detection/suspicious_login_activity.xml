@@ -1,0 +1,221 @@
+﻿<dashboard version="1.1" theme="dark">
+  <label>Detect Suspicious Login Activity Dashboard</label>
+  <description>Comprehensive Security Operations Center (SOC) view for account compromise, brute-force attacks, impossible travel, and anomalous authentications.</description>
+  
+  <!-- Global Time Filter -->
+  <fieldset submitButton="true" autoRun="true">
+    <input type="time" token="time_range" searchWhenChanged="true">
+      <label>Time Range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="dropdown" token="selected_user" searchWhenChanged="true">
+      <label>Filter by User</label>
+      <choice value="*">All Users</choice>
+      <default>*</default>
+      <fieldForLabel>user</fieldForLabel>
+      <fieldForValue>user</fieldForValue>
+      <search>
+        <query>(index=auth OR index=main) sourcetype=auth* | stats count by user</query>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </search>
+    </input>
+  </fieldset>
+
+  <!-- Row 1: High Level Metrics -->
+  <row>
+    <panel>
+      <single>
+        <title>Total Authentication Events</title>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* user="$selected_user$" | stats count</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="useColors">1</option>
+        <option name="rangeColors">["0x53a051","0x006d9c"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="underLabel">Events Processed</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Total Failed Logins</title>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* user="$selected_user$" action="failure" | stats count</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="useColors">1</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[10,30]</option>
+        <option name="underLabel">Failed Attempts</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Brute Force Alert Triggers</title>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* user="$selected_user$" action="failure" | stats count by src_ip | where count >= 10 | stats count</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="useColors">1</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[1]</option>
+        <option name="underLabel">High-Rate Attack Sources</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Compromised Account Leads (Success After Failures)</title>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* user="$selected_user$" | stats count(eval(action="failure")) as failures count(eval(action="success")) as successes by user, src_ip | where failures >= 5 AND successes >= 1 | stats dc(user)</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+        <option name="useColors">1</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[1]</option>
+        <option name="underLabel">Suspected Compromised Users</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Row 2: Panel 1 (Failed Logins Over Time) & Panel 2 (Top Attacking IPs) -->
+  <row>
+    <!-- PANEL 1: Failed Logins Over Time -->
+    <panel>
+      <title>Panel 1: Failed Logins Over Time (Attack Volumetrics)</title>
+      <chart>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* user="$selected_user$" action="failure" | timechart span=30m count by app</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisTitleX.text">Time Window</option>
+        <option name="charting.axisTitleY.text">Failed Login Count</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+
+    <!-- PANEL 2: Top Attacking IPs -->
+    <panel>
+      <title>Panel 2: Top Attacking IPs (Brute-Force &amp; Spray Sources)</title>
+      <chart>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* action="failure" | stats count as failed_attempts, dc(user) as targeted_users_count by src_ip | sort - failed_attempts | head 10</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.axisTitleX.text">Failed Attempt Count</option>
+        <option name="charting.axisTitleY.text">Source IP Address</option>
+        <option name="charting.seriesColors">[0xd93f3c, 0xf58f39]</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Row 3: Panel 3 (Most Targeted Users) & Panel 4 (Successful Logins Following Failures) -->
+  <row>
+    <!-- PANEL 3: Most Targeted Users -->
+    <panel>
+      <title>Panel 3: Most Targeted User Accounts</title>
+      <chart>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* action="failure" | top limit=10 user</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+
+    <!-- PANEL 4: Successful Logins Following Failures (Account Takeover) -->
+    <panel>
+      <title>Panel 4: CRITICAL ALERT - Successful Logins Following Multiple Failures</title>
+      <table>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* | stats count(eval(action="failure")) as failures, count(eval(action="success")) as successes, values(app) as applications, latest(_time) as last_seen by user, src_ip | where failures >= 5 AND successes >= 1 | eval last_seen=strftime(last_seen, "%Y-%m-%d %H:%M:%S") | eval Threat_Level=case(failures >= 10, "CRITICAL: High Probability Account Compromise", failures >= 5, "HIGH: Password Spray / Guessing Success") | sort - failures | rename user as "Target User", src_ip as "Attacking/Origin IP", failures as "Preceding Failures", successes as "Follow-up Successes", applications as "Targeted Service", last_seen as "Compromise Timestamp", Threat_Level as "Threat Severity"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="dataOverlayMode">heatmap</option>
+        <option name="drilldown">cell</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Row 4: Panel 5 (Geographic Login Map) -->
+  <row>
+    <!-- PANEL 5: Geographic Login Map -->
+    <panel>
+      <title>Panel 5: Global Geographic Login Distribution (iplocation &amp; geostats)</title>
+      <map>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* | iplocation src_ip | where isnotnull(lat) AND isnotnull(lon) | geostats count by action</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="mapping.type">marker</option>
+        <option name="mapping.map.center">(25, 20)</option>
+        <option name="mapping.map.zoom">2</option>
+        <option name="mapping.markerLayer.markerMinPercent">6</option>
+        <option name="mapping.markerLayer.markerMaxPercent">28</option>
+        <option name="mapping.data.maxClusters">100</option>
+      </map>
+    </panel>
+  </row>
+
+  <!-- Row 5: Panel 6 (High-Risk Users & Impossible Travel / Anomalies) -->
+  <row>
+    <!-- PANEL 6: High-Risk Users & Anomaly Scoring -->
+    <panel>
+      <title>Panel 6: User Risk Matrix &amp; Impossible Travel / Off-Hours Anomalies</title>
+      <table>
+        <search>
+          <query>(index=auth OR index=main) sourcetype=auth* 
+| eval hour=strftime(_time, "%H")
+| eval is_off_hours=if(hour &gt;= "01" AND hour &lt;= "05", 1, 0)
+| stats count(eval(action="failure")) as fail_cnt,
+        count(eval(action="success")) as succ_cnt,
+        dc(src_ip) as distinct_ips,
+        values(src_ip) as ip_list,
+        sum(is_off_hours) as off_hours_logins,
+        latest(_time) as latest_event
+        by user
+| eval risk_score = (fail_cnt * 2) + (if(succ_cnt &gt; 0 AND fail_cnt &gt;= 5, 50, 0)) + (distinct_ips * 10) + (off_hours_logins * 15)
+| eval Risk_Category = case(
+    risk_score &gt;= 70, "HIGH RISK (Immediate Action Required)",
+    risk_score &gt;= 30, "MEDIUM RISK (Suspicious Activity)",
+    true(), "LOW / NORMAL"
+  )
+| eval latest_event=strftime(latest_event, "%Y-%m-%d %H:%M:%S")
+| sort - risk_score
+| rename user as "User Account", risk_score as "Composite Risk Score", Risk_Category as "Risk Status", fail_cnt as "Total Failures", succ_cnt as "Total Successes", distinct_ips as "Distinct IPs", off_hours_logins as "Off-Hours Logins (1am-5am)", latest_event as "Latest Activity Time"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="dataOverlayMode">heatmap</option>
+        <option name="drilldown">row</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+
+</dashboard>

@@ -91,7 +91,7 @@ Write-Host "Configured transforms.conf for lookup table 'threat_intel_lookup'." 
 # ==========================================
 # 2. GENERATE & INGEST FIREWALL LOGS
 # ==========================================
-Write-Host "`n[3/6] Ingesting sample firewall & connection logs..." -ForegroundColor Cyan
+Write-Host "`n[3/6] Ingesting sample firewall & connection logs (current timestamps)..." -ForegroundColor Cyan
 
 $benignIps = @("192.168.1.100", "192.168.1.105", "10.0.0.15", "10.0.0.42", "172.16.5.20", "8.8.8.8", "1.1.1.1", "142.250.190.46", "13.107.42.14")
 $internalServers = @("10.0.1.10", "10.0.1.20", "10.0.1.50", "10.0.2.100", "10.0.2.200")
@@ -100,11 +100,11 @@ $threatIps = $allThreatRows | Select-Object -ExpandProperty ip
 $firewallEvents = [System.Collections.Generic.List[string]]::new()
 $now = Get-Date
 
-for ($j = 0; $j -lt 150; $j++) {
+for ($j = 0; $j -lt 250; $j++) {
     $timestamp = $now.AddMinutes(-1 * (Get-Random -Minimum 1 -Maximum 1440)).ToString("yyyy-MM-dd HH:mm:ss")
     
-    # 35% chance malicious, 65% chance benign
-    $isThreat = ((Get-Random -Minimum 1 -Maximum 100) -le 35)
+    # 40% chance malicious, 60% chance benign
+    $isThreat = ((Get-Random -Minimum 1 -Maximum 100) -le 40)
     if ($isThreat) {
         $src = $threatIps | Get-Random
         $dst = $internalServers | Get-Random
@@ -130,7 +130,6 @@ for ($j = 0; $j -lt 150; $j++) {
 }
 
 $fwRawPayload = ($firewallEvents -join "`n")
-# Ingest into Splunk via simple receiver endpoint
 $fwUri = "$splunkHost/services/receivers/simple?index=main&sourcetype=firewall_traffic"
 $ingestResp1 = Invoke-RestMethod -Uri $fwUri -Method Post -Body $fwRawPayload -Headers $headers
 Write-Host "Ingested $($firewallEvents.Count) firewall connection events into sourcetype 'firewall_traffic'." -ForegroundColor Green
@@ -139,7 +138,7 @@ Write-Host "Ingested $($firewallEvents.Count) firewall connection events into so
 # ==========================================
 # 3. GENERATE & INGEST INCIDENT AUTH LOGS
 # ==========================================
-Write-Host "`n[4/6] Ingesting incident investigation auth & security logs..." -ForegroundColor Cyan
+Write-Host "`n[4/6] Ingesting incident investigation auth & security logs (current timestamps)..." -ForegroundColor Cyan
 
 $publicIps = @(
     @{ ip = "185.220.101.5"; country = "Germany" },
@@ -169,7 +168,7 @@ $errorCodes = @(
 
 $authEvents = [System.Collections.Generic.List[string]]::new()
 
-for ($k = 0; $k -lt 250; $k++) {
+for ($k = 0; $k -lt 350; $k++) {
     $timestamp = $now.AddMinutes(-1 * (Get-Random -Minimum 1 -Maximum 1440)).ToString("yyyy-MM-dd HH:mm:ss")
     $user = $users | Get-Random
     $ipObj = $publicIps | Get-Random
@@ -205,7 +204,7 @@ Write-Host "Ingested $($authEvents.Count) incident authentication events into so
 
 
 # ==========================================
-# 4. CREATE DASHBOARD XML & DEPLOY TO SPLUNK
+# 4. CREATE DASHBOARD XML WITH TIME PICKER & DEPLOY
 # ==========================================
 Write-Host "`n[5/6] Deploying 4-panel Incident Investigation Dashboard..." -ForegroundColor Cyan
 
@@ -214,15 +213,25 @@ $dashboardXml = @'
   <label>Incident Investigation Dashboard</label>
   <description>Comprehensive 4-Panel Security Incident Analysis: Failed Logins, Geo-Location Tracking, Activity Timeline, and Error Diagnostics</description>
   
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="time_range" searchWhenChanged="true">
+      <label>Time Range</label>
+      <default>
+        <earliest>0</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
   <row>
     <!-- Panel 1: Top Failed Logins by User -->
     <panel>
       <title>Top Failed Logins by Target User</title>
       <chart>
         <search>
-          <query>sourcetype=incident:auth action="failure" | top limit=10 user</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth action="failure" | top limit=10 user</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="charting.chart">bar</option>
         <option name="charting.chart.showDataLabels">all</option>
@@ -238,9 +247,9 @@ $dashboardXml = @'
       <title>Geolocations of Remote Connections (iplocation)</title>
       <map>
         <search>
-          <query>sourcetype=incident:auth | iplocation src_ip | where isnotnull(lat) AND isnotnull(lon) | geostats count by action</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth | iplocation src_ip | where isnotnull(lat) AND isnotnull(lon) | geostats count by action</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="mapping.type">marker</option>
         <option name="mapping.map.center">(20,0)</option>
@@ -257,9 +266,9 @@ $dashboardXml = @'
       <title>Timeline of Authentication Events (Success vs Failure)</title>
       <chart>
         <search>
-          <query>sourcetype=incident:auth | timechart span=1h count by action</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth | timechart span=1h count by action</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="charting.chart">area</option>
         <option name="charting.chart.stackMode">stacked</option>
@@ -275,9 +284,9 @@ $dashboardXml = @'
       <title>Raw Error Codes Breakdown</title>
       <table>
         <search>
-          <query>sourcetype=incident:auth action="failure" | stats count by error_code, error_description | sort - count | rename error_code as "Error Code", error_description as "Error Description", count as "Failure Count"</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+          <query>index=* sourcetype=incident:auth action="failure" | stats count by error_code, error_description | sort - count | rename error_code as "Error Code", error_description as "Error Description", count as "Failure Count"</query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
         </search>
         <option name="drilldown">none</option>
         <option name="dataOverlayMode">heatmap</option>
@@ -319,7 +328,7 @@ try {
 Write-Host "`n[6/6] Verifying Search Results..." -ForegroundColor Cyan
 
 # Test Threat Intel Lookup search
-$testSpl = "search sourcetype=firewall_traffic | lookup threat_intel_malicious_ips.csv ip as src_ip OUTPUT threat_category, confidence_score, description | where isnotnull(threat_category) | stats count by threat_category"
+$testSpl = "search index=* sourcetype=firewall_traffic | lookup threat_intel_malicious_ips.csv ip as src_ip OUTPUT threat_category, confidence_score, description | where isnotnull(threat_category) | stats count by threat_category"
 $searchBody = @{ search = $testSpl; exec_mode = "oneshot"; output_mode = "json" }
 $searchJobResp = Invoke-RestMethod -Uri "$splunkHost/services/search/jobs" -Method Post -Body $searchBody -Headers $headers
 $threatCount = $searchJobResp.results.Count
